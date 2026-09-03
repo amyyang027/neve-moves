@@ -1,44 +1,52 @@
 # Neve Moves
 
-A local web app for running a K-pop dance cover project end to end — from
-picking a song to posting the finished video. Built for Neve Moves, a nonprofit
-dance cover group in the SF Bay Area.
+A web app for running a K-pop dance cover project end to end — from picking a
+song to posting the finished video. Built for Neve Moves, a nonprofit dance
+cover group in the SF Bay Area.
 
-**Phase 1 status:** fully working locally, zero cost, no API keys. Every "AI"
-feature is a clearly-marked mock that returns a believable result so every
-screen is clickable and demoable. Ships with one example project and 6 example
-members, all labelled **SAMPLE DATA**.
+**Live:** https://neve-moves.vercel.app
+**Hosting:** Vercel (app) + Supabase (Postgres database + file storage) — both
+free tiers, no card. See [Deployment](#deployment).
+
+Every "AI" feature is a clearly-marked mock that returns a believable result, so
+every screen works with no API key. Ships pre-loaded with one example project
+and 6 example members, all labelled **SAMPLE DATA**.
 
 ---
 
-## Quick start
+## Quick start (local development)
 
 ```bash
 npm install
-npm run db:reset      # creates the local SQLite database and loads sample data
-npm run dev           # http://localhost:3000
+cp .env.example .env      # then paste your Supabase connection strings — see below
+npm run db:seed           # loads the sample data
+npm run dev               # http://localhost:3000
 ```
 
-That's it — no accounts, no environment variables, no external services.
+The app connects to the **Supabase Postgres** database (the same one the live
+site uses, unless you point it at your own). Get the two connection strings from
+your Supabase project → **Connect** → *ORMs / Prisma*:
 
-If `npm run db:reset` ever asks for confirmation, that's expected (it wipes the
-local database). There is nothing to lose but the sample data, which it
-re-creates.
+- `DATABASE_URL` — the **Transaction pooler** URL (port 6543), plus `?pgbouncer=true&connection_limit=1`
+- `DIRECT_URL` — the **Session pooler** URL (port 5432)
+
+`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (Project Settings → API) enable the
+photo-upload bucket; without them, uploads fall back to `/public/uploads` on
+local disk.
 
 ### Everyday commands
 
 | Command | What it does |
 |---|---|
-| `npm run dev` | Run the app locally with live reload |
-| `npm run db:reset` | Wipe the database and reload fresh sample data |
-| `npm run db:seed` | Re-run the seed script (clears + re-seeds) |
-| `npm run db:studio` | Open Prisma Studio — a spreadsheet-like view of the raw data |
-| `npm run sync:youtube` | Save a local copy of the channel's videos for the About gallery (see below) |
-| `npm run build` | Production build (not needed for local use) |
+| `npm run dev` | Run locally with live reload |
+| `npm run db:seed` | **Wipe and reload the sample data** (clears every table first — careful, this hits whatever database `.env` points at) |
+| `npm run db:studio` | Prisma Studio — a spreadsheet-like view of the raw data |
+| `npm run sync:youtube` | Refresh the saved copy of the channel's videos for the About gallery |
+| `npm run build` | Production build (`prisma migrate deploy` + `next build`) |
 
-> After changing `prisma/schema.prisma` you must run
-> `npx prisma migrate dev --name <something>` **and restart `npm run dev`** so
-> the generated database client picks up the change.
+> After changing `prisma/schema.prisma`: run `npx prisma migrate dev --name <what-changed>`,
+> commit the new folder under `prisma/migrations/`, and restart `npm run dev`.
+> On the next deploy, Vercel runs `prisma migrate deploy` automatically.
 
 ---
 
@@ -136,14 +144,17 @@ never exposed to the browser.
 
 ## How the data works
 
-- **Storage:** a single SQLite file at `prisma/dev.db` (git-ignored). No server.
+- **Database:** Supabase Postgres. Connection via a pooled URL at runtime
+  (`DATABASE_URL`) and a direct URL for migrations (`DIRECT_URL`).
 - **Schema:** [`prisma/schema.prisma`](prisma/schema.prisma) — readable, heavily
-  commented. It's shaped like a shared multi-user app already (stable ids,
-  everything references by id), but runs locally with zero setup.
+  commented. "One of a fixed set" fields are plain strings validated against
+  `src/lib/constants.ts`; they can be promoted to Prisma enums if you want.
+- **File storage:** member photos go to a public Supabase Storage bucket
+  (`uploads`). Poster images aren't files — they're SVG stored in a DB column.
 - **Sample data:** [`prisma/seed.ts`](prisma/seed.ts). Everything it creates has
   `isSample: true` and a `[SAMPLE]` tag in its name so it's never mistaken for a
-  real roster. Delete sample rows any time, or `npm run db:reset` to bring them
-  back.
+  real roster. Delete sample rows any time; `npm run db:seed` clears every table
+  and reloads them.
 
 ### Project structure
 
@@ -172,10 +183,11 @@ src/
     format.ts                    Small display helpers
     ai/                          All AI helpers (see above)
   components/                    Shared UI (MonthCalendar, ProjectCard, Section, …)
+    storage.ts                   Supabase Storage client (member photos)
   data/youtube-covers.json       Saved copy of the gallery (npm run sync:youtube)
 scripts/sync-youtube.ts          Refreshes the saved gallery copy
 public/brand/                    Channel avatar + banner (downloaded once)
-public/uploads/                  Member photo uploads (git-ignored)
+public/uploads/                  Member photo uploads — local-dev fallback (git-ignored)
 ```
 
 Data changes go through **server actions** (`actions.ts` files) — plain
@@ -221,48 +233,51 @@ needs a Google Cloud signup + key, so it's deliberately not used.
 
 ---
 
-## Phase 2: making it a real shared app
+## Deployment
 
-Phase 1 is deliberately local. To host it so the whole group can use it
-(voting, reminders for everyone), here's what changes — none of it is done yet:
+The app is live at **https://neve-moves.vercel.app**, hosted for $0:
 
-| Area | Phase 1 | Phase 2 |
+| Piece | Service | Notes |
 |---|---|---|
-| **Database** | SQLite file | Postgres on [Supabase](https://supabase.com) free tier. Change the Prisma `datasource` provider + `DATABASE_URL`, re-run migrations. Enum-like string fields can become real Prisma enums. Scalar-array fields (currently child tables) can be simplified. |
-| **Hosting** | `npm run dev` | Push to GitHub → deploy on [Vercel](https://vercel.com) free tier. |
-| **Login / identity** | Voters pick their name from the roster | Real accounts (Supabase Auth or NextAuth). Add `Member.userId`; replace `voterMemberId` with the authenticated user. Gate edit actions behind auth. |
-| **Reminders** | Shown in an in-app list only | Actual delivery: a scheduled job (Vercel Cron) that emails (e.g. Resend free tier) or push-notifies when a `reminderDate` is near. |
-| **Member photos** | Uploaded to `public/uploads/` on local disk | Vercel's filesystem is read-only/ephemeral — move uploads to Supabase Storage or Vercel Blob. The upload action in `src/app/members/actions.ts` is the only thing to change. |
-| **Other images** | URL fields (vote thumbnails, outfit references) | Same — optional uploads via blob storage. |
-| **AI** | Mocks in `src/lib/ai/` | Add `ANTHROPIC_API_KEY`, swap the mock bodies (one block per file). |
-| **Outfit references** | Paste an image URL per outfit | Optionally a paid image-search API to auto-find MV/stage photos. |
-| **YouTube gallery** | RSS feed + `npm run sync:youtube` fallback | On a host that blocks the feed, run the sync as a scheduled job, or use the YouTube Data API with a key. |
-| **Scheduling** | Assistive only — conflict calendar + paste Crabfit link | Stays the same. Crabfit keeps doing the poll; we don't rebuild that (it has no public API). |
+| App | **Vercel** (Hobby) | Project `neve-moves`. Env vars `DATABASE_URL`, `DIRECT_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET` set for Production/Preview/Development. |
+| Database | **Supabase** Postgres (Free) | Project `neve-moves`, region `us-west-1`. Free projects pause after ~7 days idle — one click in the Supabase dashboard wakes it. |
+| File storage | **Supabase Storage** | Public bucket `uploads`, 5 MB / image types only. |
 
-The data model already anticipates all of this, so Phase 2 is mostly
-configuration and auth, not a rewrite.
+### Redeploying
 
----
+```bash
+git push                 # if the Vercel Git integration is connected (see below)
+# — or, any time —
+npx vercel --prod        # deploy the current working directory
+```
 
-## Known Phase 1 limitations (by design)
+The Vercel build runs `prisma migrate deploy` then `next build`, so committed
+migrations apply automatically.
 
-- No notifications are actually sent — reminders are a list on the dashboard /
-  calendar.
-- No logins — anyone with the local URL can edit anything and vote as anyone.
-- No real AI — see above.
-- No image generation or web image search — the poster is a template; outfit
-  references are pasted URLs.
-- Member photos upload to local disk (fine locally, not on a serverless host).
-  Vote thumbnails and video-take links are still pasted URLs.
-- The About gallery needs to reach YouTube's RSS feed (or a `sync:youtube` run).
-- Single group — there's no notion of multiple organisations.
+### Connect Git for auto-deploy (optional, one browser step)
+
+Right now deploys are manual (`npx vercel --prod`). To deploy automatically on
+every `git push`:
+
+1. Install the **Vercel GitHub App**: https://github.com/apps/vercel → *Install* → select `amyyang027/neve-moves`.
+2. `npx vercel git connect`
+
+### What's still not done
+
+| Area | Status | To finish |
+|---|---|---|
+| **Login / identity** | Voters pick their name; anyone with the link can edit | Add [Supabase Auth](https://supabase.com/docs/guides/auth). Add `Member.userId`, gate the server actions, replace `voterMemberId` with the signed-in user. |
+| **Reminder delivery** | Shown on the dashboard / calendar only | A [Vercel Cron](https://vercel.com/docs/cron-jobs) route that checks `reminderDate`s daily and emails via a free tier (e.g. Resend). |
+| **Real AI** | Mocks in `src/lib/ai/` | Add `ANTHROPIC_API_KEY`, swap the mock bodies — see "Wiring in real AI" above. |
+| **Outfit references** | Paste an image URL per outfit | Optional paid image-search API to auto-find MV/stage photos. |
+| **Vote thumbnails / take links** | Pasted URLs | Could reuse the Storage bucket. |
+| **Scheduling** | Assistive — conflict calendar + paste Crabfit link | Stays this way on purpose. Crabfit has no public API. |
 
 ---
 
 ## Tech
 
-Next.js 16 (App Router) · React 19 · TypeScript · Prisma 6 + SQLite ·
-Tailwind CSS 4. Chosen for a smooth, free path to hosting later (Vercel +
-Supabase) and because it's widely used enough to stay maintainable. **No third-
-party runtime dependencies** beyond that — the calendar, XML parsing, image
+Next.js 16 (App Router) · React 19 · TypeScript · Prisma 6 · Supabase (Postgres
++ Storage) · Tailwind CSS 4 · hosted on Vercel. **No third-party runtime
+dependencies** beyond the database client — the calendar, XML parsing, image
 handling and uploads are all hand-rolled.

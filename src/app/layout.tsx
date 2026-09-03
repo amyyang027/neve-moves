@@ -51,8 +51,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         </header>
 
         <div className="border-b border-border bg-[var(--warn-soft)] px-4 py-1.5 text-center text-xs text-[var(--warn)]">
-          Prototype · local data only · ships with clearly-labelled{" "}
-          <strong>SAMPLE DATA</strong>
+          Shared prototype · pre-loaded with clearly-labelled{" "}
+          <strong>SAMPLE DATA</strong> · anyone with the link can edit
         </div>
 
         <main className="mx-auto max-w-5xl px-4 py-8">{children}</main>
