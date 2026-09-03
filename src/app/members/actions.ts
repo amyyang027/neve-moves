@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { parseDateInput } from "@/lib/dates";
 import { generateMemberBio } from "@/lib/ai";
 import { cleanName } from "@/lib/format";
+import { storage, storageEnabled, STORAGE_BUCKET } from "@/lib/storage";
 
 const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads");
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
@@ -69,9 +70,10 @@ export async function updateMember(memberId: string, formData: FormData) {
 }
 
 /**
- * Upload a member photo. Phase 1: the file is written to /public/uploads on the
- * local disk and referenced by path. Phase 2 (a hosted app) needs real blob
- * storage — the filesystem on Vercel is read-only/ephemeral. See README.
+ * Upload a member photo.
+ *  - Hosted (SUPABASE_URL set): uploaded to the Supabase Storage bucket.
+ *  - Local dev without Supabase configured: written to /public/uploads.
+ * Either way the resulting URL is stored in `photoUrl`.
  */
 export async function uploadMemberPhoto(memberId: string, formData: FormData) {
   const file = formData.get("photo");
@@ -84,25 +86,40 @@ export async function uploadMemberPhoto(memberId: string, formData: FormData) {
   const ext = PHOTO_EXT[file.type];
   if (!ext) throw new Error("Photo must be a JPEG, PNG, WebP or GIF");
 
-  await mkdir(UPLOAD_DIR, { recursive: true });
-  const filename = `${memberId}.${ext}`;
-  await writeFile(
-    path.join(UPLOAD_DIR, filename),
-    Buffer.from(await file.arrayBuffer()),
-  );
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const cacheBust = `?v=${Date.now()}`;
+  let photoUrl: string;
 
-  // Remove any previous file with a different extension.
-  for (const other of Object.values(PHOTO_EXT)) {
-    if (other !== ext) {
-      await unlink(path.join(UPLOAD_DIR, `${memberId}.${other}`)).catch(() => {});
+  if (storageEnabled && storage) {
+    const key = `members/${memberId}.${ext}`;
+    const { error } = await storage
+      .from(STORAGE_BUCKET)
+      .upload(key, bytes, { contentType: file.type, upsert: true });
+    if (error) throw new Error(`Upload failed: ${error.message}`);
+
+    // Clean up a previous photo with a different extension.
+    for (const other of Object.values(PHOTO_EXT)) {
+      if (other !== ext) {
+        await storage
+          .from(STORAGE_BUCKET)
+          .remove([`members/${memberId}.${other}`])
+          .catch(() => {});
+      }
     }
+    photoUrl = storage.from(STORAGE_BUCKET).getPublicUrl(key).data.publicUrl + cacheBust;
+  } else {
+    await mkdir(UPLOAD_DIR, { recursive: true });
+    const filename = `${memberId}.${ext}`;
+    await writeFile(path.join(UPLOAD_DIR, filename), bytes);
+    for (const other of Object.values(PHOTO_EXT)) {
+      if (other !== ext) {
+        await unlink(path.join(UPLOAD_DIR, `${memberId}.${other}`)).catch(() => {});
+      }
+    }
+    photoUrl = `/uploads/${filename}${cacheBust}`;
   }
 
-  // ?v= busts the browser cache when the photo is replaced.
-  await db.member.update({
-    where: { id: memberId },
-    data: { photoUrl: `/uploads/${filename}?v=${Date.now()}` },
-  });
+  await db.member.update({ where: { id: memberId }, data: { photoUrl } });
 
   revalidatePath("/members");
   revalidatePath(`/members/${memberId}`);

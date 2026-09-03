@@ -1,22 +1,21 @@
 // Neve Moves — data model
 //
-// Phase 1 runs on SQLite (a single local file, prisma/dev.db) so you can start
-// with zero setup. The model is deliberately shaped like a shared, hosted app:
-// every table has a stable id, rows reference each other by id, and nothing
-// assumes "only one person uses this".
+// Runs on Supabase Postgres. Every table has a stable id and rows reference
+// each other by id, so the model works as a shared, multi-user app.
 //
-// NOTE ON SQLite: SQLite (via Prisma) does not support enum types or scalar
-// arrays. So fields that are really "one of a fixed set" are plain strings,
-// with the allowed values centralised in src/lib/constants.ts. When you move to
-// Postgres/Supabase in Phase 2 you can promote these to real enums.
+// "One of a fixed set" fields (phase, status, kind, …) are plain strings with
+// the allowed values centralised in src/lib/constants.ts — a leftover from the
+// SQLite prototype. They can now be promoted to real Prisma enums if you want
+// stricter validation; the app reads them the same way either way.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL") // pooled connection (PgBouncer) — used at runtime
+  directUrl = env("DIRECT_URL") // direct/session connection — used for migrations
 }
 
 /// A person in the group. Lives in the member directory and is reused across

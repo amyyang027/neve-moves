@@ -83,7 +83,8 @@ export default async function MemberDetailPage({
                   </SubmitButton>
                 </form>
                 <p className="mt-1 text-xs">
-                  Saved to <code>/public/uploads</code> (local disk). Or paste a URL below.
+                  Stored in Supabase Storage (or <code>/public/uploads</code> in
+                  local dev). Or paste a URL below.
                 </p>
               </div>
             </div>
