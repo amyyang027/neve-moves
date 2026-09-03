@@ -1,0 +1,115 @@
+@import "tailwindcss";
+
+/*
+  Neve Moves — design system.
+  "Neve" is snow. The identity (from the group's own YouTube channel) is winter
+  and frost: icy pale blue-greys, white, silver, an elegant serif wordmark, and
+  snowflake / sparkle accents. Palette and fonts are pulled from the real
+  channel avatar + banner in /public/brand.
+*/
+
+:root {
+  --frost: #eef1f7; /* page ground */
+  --ice: #ffffff; /* cards / surfaces */
+  --ice-tint: #f7f9fc; /* subtle inset surface */
+  --hairline: #dfe4ee; /* borders */
+  --ink: #2c3547; /* headings + body text */
+  --ink-soft: #63708a; /* secondary text */
+  --periwinkle: #6d81ac; /* primary accent (buttons, active) */
+  --periwinkle-strong: #4a5c86; /* hover */
+  --glow: #dfe4f5; /* selected / accent-soft fills */
+  --silver: #aab4c9;
+
+  --good: #3f7d64;
+  --good-soft: #e4f0ea;
+  --bad: #b0475a;
+  --bad-soft: #f7e6ea;
+  --warn: #9a6a3c;
+  --warn-soft: #f6ecdf;
+
+  /* aliases used by Tailwind theme below */
+  --background: var(--frost);
+  --surface: var(--ice);
+  --border: var(--hairline);
+  --foreground: var(--ink);
+  --muted: var(--ink-soft);
+  --accent: var(--periwinkle);
+  --accent-soft: var(--glow);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-ice-tint: var(--ice-tint);
+  --color-border: var(--border);
+  --color-foreground: var(--foreground);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-periwinkle-strong: var(--periwinkle-strong);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-marcellus), Georgia, "Times New Roman", serif;
+  --font-mono: ui-monospace, monospace;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, .font-display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+
+/* Form elements */
+input[type="text"],
+input[type="url"],
+input[type="date"],
+input[type="number"],
+input[type="search"],
+input[type="file"],
+select,
+textarea {
+  width: 100%;
+  border: 1px solid var(--hairline);
+  border-radius: 0.5rem;
+  background: var(--ice);
+  padding: 0.5rem 0.7rem;
+  font: inherit;
+  color: inherit;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: 2px solid var(--periwinkle);
+  outline-offset: 1px;
+}
+
+label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-bottom: 0.3rem;
+}
+
+a {
+  color: inherit;
+}
+
+/* A faint frost wash used behind hero areas */
+.frost-wash {
+  background:
+    radial-gradient(120% 80% at 85% 0%, rgba(109, 129, 172, 0.12), transparent 60%),
+    radial-gradient(90% 90% at 0% 100%, rgba(170, 180, 201, 0.16), transparent 55%),
+    var(--frost);
+}

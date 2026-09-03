@@ -1,0 +1,245 @@
+// Neve Moves — data model
+//
+// Phase 1 runs on SQLite (a single local file, prisma/dev.db) so you can start
+// with zero setup. The model is deliberately shaped like a shared, hosted app:
+// every table has a stable id, rows reference each other by id, and nothing
+// assumes "only one person uses this".
+//
+// NOTE ON SQLite: SQLite (via Prisma) does not support enum types or scalar
+// arrays. So fields that are really "one of a fixed set" are plain strings,
+// with the allowed values centralised in src/lib/constants.ts. When you move to
+// Postgres/Supabase in Phase 2 you can promote these to real enums.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// A person in the group. Lives in the member directory and is reused across
+/// every project. Their bio is written once (or regenerated on demand) and
+/// stored here — it is not regenerated per project.
+model Member {
+  id              String    @id @default(cuid())
+  name            String
+  stageName       String? // optional — only if the group adopts stage names
+  teamRole        String    @default("Dancer") // e.g. "Leader / Main Dancer"
+  pronouns        String?
+  instagramHandle String? // stored without the leading "@"
+  wechatId        String?
+  photoUrl        String? // URL or /public path; Phase 2: real uploads
+  bio             String?
+  bioUpdatedAt    DateTime?
+  joinDate        DateTime?
+  active          Boolean   @default(true)
+  isSample        Boolean   @default(false) // true = seeded example, safe to delete
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  blockedDates  BlockedDate[]
+  rosterEntries RosterEntry[]
+  votes         Vote[]
+}
+
+/// A hard-blocked date range for a member (usually travel). Belongs to the
+/// member globally and is taken into account on every project's schedule.
+model BlockedDate {
+  id        String   @id @default(cuid())
+  memberId  String
+  member    Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  startDate DateTime
+  endDate   DateTime
+  reason    String?
+  createdAt DateTime @default(now())
+}
+
+/// One dance cover project, from song pick through published video.
+model Project {
+  id              String    @id @default(cuid())
+  songTitle       String
+  kpopGroup       String
+  themeVibe       String? // free text — the vibe of the original MV/stage
+  dateWindowLabel String? // vague window for the recruitment poster, e.g. "Late September"
+  phase           String    @default("planning") // see PROJECT_PHASES in constants.ts
+  crabfitUrl      String? // paste the Crabfit poll link here
+  posterSvg       String? // generated recruitment poster (SVG markup)
+  posterUpdatedAt DateTime?
+  posterVariant   Int       @default(0) // which template layout — "Regenerate" cycles this
+  youtubeUrl      String? // final published video — drives the About page gallery
+  coverImageUrl   String? // chosen cover photo — also for the gallery
+  isSample        Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  references          ReferenceLink[]
+  roster              RosterEntry[]
+  events              ProjectEvent[]
+  locations           LocationOption[]
+  candidateDates      CandidateDate[]
+  videographer        Videographer?
+  outfitSuggestions   OutfitSuggestion[]
+  filmSpotSuggestions FilmSpotSuggestion[]
+  polls               Poll[]
+  copy                ProjectCopy[]
+}
+
+/// A reference link for the song (YouTube, Bilibili, …). A song can have several.
+model ReferenceLink {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  label     String // "YouTube", "Bilibili", …
+  url       String
+}
+
+/// Membership of a project's roster. isDancer distinguishes "actually dancing
+/// this cover" from "on the roster but sitting this one out".
+model RosterEntry {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  memberId    String
+  member      Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  isDancer    Boolean  @default(true)
+  projectRole String? // optional role for this specific cover (e.g. "center")
+  createdAt   DateTime @default(now())
+
+  @@unique([projectId, memberId])
+}
+
+/// A practice or the film day. Seeded as 3 practices + 1 film day, fully editable
+/// (add, remove, rename). reminderDate powers the dashboard "Upcoming" list.
+model ProjectEvent {
+  id            String    @id @default(cuid())
+  projectId     String
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  kind          String // "practice" | "film"
+  label         String // "Practice 1", "Film Day"
+  orderIndex    Int       @default(0)
+  targetDate    DateTime? // the date you're proposing / leaning toward
+  confirmedDate DateTime? // the date the group actually landed on (post-Crabfit)
+  reminderDate  DateTime?
+  locationCity  String?
+  locationNote  String?
+  createdAt     DateTime  @default(now())
+}
+
+/// A candidate date you're considering for practices/film, used by the
+/// conflict grid to show who is free before you create the Crabfit poll.
+model CandidateDate {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  date      DateTime
+  note      String?
+  createdAt DateTime @default(now())
+}
+
+/// A possible practice city or film spot for the project.
+model LocationOption {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  kind      String // "practice" | "film"
+  city      String
+  name      String? // spot name (film locations)
+  address   String?
+  note      String?
+  source    String   @default("preferred") // "preferred" | "manual" | "ai_suggested"
+  selected  Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+/// Videographer booking tracker. Contact happens off-app (Instagram / WeChat);
+/// this just tracks status + a reminder date.
+model Videographer {
+  id            String    @id @default(cuid())
+  projectId     String    @unique
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name          String?
+  contactVia    String? // "Instagram" | "WeChat"
+  contactHandle String?
+  status        String    @default("not_contacted") // "not_contacted" | "contacted" | "confirmed"
+  reminderDate  DateTime?
+  notes         String?
+  updatedAt     DateTime  @updatedAt
+}
+
+/// An AI-suggested (or manually added) outfit description to shop from.
+model OutfitSuggestion {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  description       String
+  referenceImageUrl String? // a real photo of the original MV/stage outfit to shop toward
+  source            String   @default("ai") // "ai" | "manual"
+  selected          Boolean  @default(false)
+  createdAt         DateTime @default(now())
+}
+
+/// An AI-suggested (or manually added) Bay Area film location.
+model FilmSpotSuggestion {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name        String
+  description String
+  whyItFits   String?
+  source      String   @default("ai") // "ai" | "manual"
+  selected    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}
+
+/// A vote among a set of options — used twice per project: once for the video
+/// take, once for the cover photo.
+model Poll {
+  id        String       @id @default(cuid())
+  projectId String
+  project   Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  kind      String // "video_take" | "cover_photo"
+  title     String
+  status    String       @default("open") // "open" | "closed"
+  createdAt DateTime     @default(now())
+  options   PollOption[]
+  votes     Vote[]
+}
+
+model PollOption {
+  id           String   @id @default(cuid())
+  pollId       String
+  poll         Poll     @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  label        String
+  url          String?
+  thumbnailUrl String?
+  createdAt    DateTime @default(now())
+  votes        Vote[]
+}
+
+/// One member's vote in one poll. The unique constraint enforces one vote per
+/// member per poll. Phase 1 identifies the voter by picking their name; Phase 2
+/// swaps voterMemberId for a real authenticated user id.
+model Vote {
+  id            String     @id @default(cuid())
+  optionId      String
+  option        PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  pollId        String
+  poll          Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  voterMemberId String
+  voter         Member     @relation(fields: [voterMemberId], references: [id], onDelete: Cascade)
+  createdAt     DateTime   @default(now())
+
+  @@unique([pollId, voterMemberId])
+}
+
+/// Generated copy for posting the finished video.
+model ProjectCopy {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  kind      String // "ig_caption" | "yt_description"
+  text      String
+  createdAt DateTime @default(now())
+}
